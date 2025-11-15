@@ -1,6 +1,6 @@
 // Run with: cargo run --example basic_usage
 
-use trait_type_map::{SingleFamily, TraitTypeMap, VecFamily, impl_trait_accessible};
+use trait_type_map::{impl_trait_accessible, SingleFamily, TraitTypeMap, VecFamily};
 
 // Define a trait that our types will implement
 trait Animal {

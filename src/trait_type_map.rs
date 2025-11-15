@@ -1,5 +1,5 @@
+use ahash::AHashMap;
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 
 /// Accessor functions for converting a concrete type to a trait object.
 ///
@@ -48,46 +48,62 @@ macro_rules! impl_trait_accessible {
 pub struct VecOptionStorage<T, Dyn: ?Sized> {
     pub data: Vec<Option<T>>,
     trait_accessor: TraitAccessor<T, Dyn>,
+    /// Cached count of non-None elements for O(1) len()
+    count: usize,
 }
 impl<T, Dyn: ?Sized> VecOptionStorage<T, Dyn> {
     pub fn new(trait_accessor: TraitAccessor<T, Dyn>) -> Self {
         Self {
             data: Vec::new(),
             trait_accessor,
+            count: 0,
         }
     }
 
+    #[inline(always)]
     pub fn push(&mut self, v: T) -> usize {
         let idx = self.data.len();
         self.data.push(Some(v));
+        self.count += 1;
         idx
     }
 
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.data.iter().filter_map(|o| o.as_ref())
     }
 
+    #[inline(always)]
     pub fn get(&self, i: usize) -> Option<&T> {
         self.data.get(i).and_then(|o| o.as_ref())
     }
 
+    #[inline(always)]
     pub fn get_mut(&mut self, i: usize) -> Option<&mut T> {
         self.data.get_mut(i).and_then(|o| o.as_mut())
     }
 
+    #[inline(always)]
     pub fn take(&mut self, i: usize) -> Option<T> {
-        self.data.get_mut(i).and_then(|o| o.take())
+        let result = self.data.get_mut(i).and_then(|o| o.take());
+        if result.is_some() {
+            self.count -= 1;
+        }
+        result
     }
 
+    #[inline(always)]
     pub fn get_dyn(&self, i: usize) -> Option<&Dyn> {
         self.get(i).map(|v| (self.trait_accessor.up_ref)(v))
     }
 
+    #[inline(always)]
     pub fn get_dyn_mut(&mut self, i: usize) -> Option<&mut Dyn> {
         let up_mut = self.trait_accessor.up_mut;
         self.get_mut(i).map(up_mut)
     }
 
+    #[inline(always)]
     pub fn take_boxed(&mut self, i: usize) -> Option<Box<Dyn>> {
         self.take(i).map(|v| (self.trait_accessor.up_box)(v))
     }
@@ -108,18 +124,22 @@ pub trait TraitVecStorage<Dyn: ?Sized>: Any {
     fn as_storage_any_mut(&mut self) -> &mut dyn Any;
 }
 impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecOptionStorage<T, Dyn> {
+    #[inline]
     fn len(&self) -> usize {
-        self.data.iter().filter(|o| o.is_some()).count()
+        self.count
     }
 
+    #[inline]
     fn get(&self, idx: usize) -> Option<&Dyn> {
         VecOptionStorage::<T, Dyn>::get_dyn(self, idx)
     }
 
+    #[inline]
     fn get_mut(&mut self, idx: usize) -> Option<&mut Dyn> {
         VecOptionStorage::<T, Dyn>::get_dyn_mut(self, idx)
     }
 
+    #[inline]
     fn take_boxed(&mut self, idx: usize) -> Option<Box<Dyn>> {
         VecOptionStorage::<T, Dyn>::take_boxed(self, idx)
     }
@@ -151,35 +171,43 @@ impl<T, Dyn: ?Sized> OptionStorage<T, Dyn> {
         }
     }
 
+    #[inline(always)]
     pub fn set(&mut self, v: T) {
         self.data = Some(v);
     }
 
+    #[inline(always)]
     pub fn get(&self) -> Option<&T> {
         self.data.as_ref()
     }
 
+    #[inline(always)]
     pub fn get_mut(&mut self) -> Option<&mut T> {
         self.data.as_mut()
     }
 
+    #[inline(always)]
     pub fn take(&mut self) -> Option<T> {
         self.data.take()
     }
 
+    #[inline(always)]
     pub fn is_some(&self) -> bool {
         self.data.is_some()
     }
 
+    #[inline(always)]
     pub fn get_dyn(&self) -> Option<&Dyn> {
         self.get().map(|v| (self.trait_accessor.up_ref)(v))
     }
 
+    #[inline(always)]
     pub fn get_dyn_mut(&mut self) -> Option<&mut Dyn> {
         let up_mut = self.trait_accessor.up_mut;
         self.get_mut().map(up_mut)
     }
 
+    #[inline(always)]
     pub fn take_boxed(&mut self) -> Option<Box<Dyn>> {
         self.take().map(|v| (self.trait_accessor.up_box)(v))
     }
@@ -197,18 +225,22 @@ pub trait TraitSingleStorage<Dyn: ?Sized>: Any {
     fn as_storage_any_mut(&mut self) -> &mut dyn Any;
 }
 impl<T: 'static, Dyn: ?Sized + 'static> TraitSingleStorage<Dyn> for OptionStorage<T, Dyn> {
+    #[inline]
     fn is_some(&self) -> bool {
         self.is_some()
     }
 
+    #[inline]
     fn get(&self) -> Option<&Dyn> {
         OptionStorage::<T, Dyn>::get_dyn(self)
     }
 
+    #[inline]
     fn get_mut(&mut self) -> Option<&mut Dyn> {
         OptionStorage::<T, Dyn>::get_dyn_mut(self)
     }
 
+    #[inline]
     fn take_boxed(&mut self) -> Option<Box<Dyn>> {
         OptionStorage::<T, Dyn>::take_boxed(self)
     }
@@ -325,7 +357,7 @@ pub trait TraitAccessible<Dyn: ?Sized> {
 /// }
 /// ```
 pub struct TraitTypeMap<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> {
-    entries: HashMap<TypeId, Box<F::Trait>>,
+    entries: AHashMap<TypeId, Box<F::Trait>>,
 }
 
 impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> Default for TraitTypeMap<Dyn, F> {
@@ -337,7 +369,15 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> Default for TraitTypeMap<Dyn,
 impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
     pub fn new() -> Self {
         Self {
-            entries: HashMap::new(),
+            entries: AHashMap::new(),
+        }
+    }
+
+    /// Create a new map with pre-allocated capacity for the given number of types.
+    /// This can improve performance when you know how many types you'll store.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            entries: AHashMap::with_capacity(capacity),
         }
     }
 
@@ -353,6 +393,7 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
         assert!(inserted, "type already registered");
     }
 
+    #[inline(always)]
     pub fn get_storage<T>(&self) -> &F::Storage<T>
     where
         T: 'static,
@@ -364,6 +405,7 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
         F::storage_ref::<T>(&**e)
     }
 
+    #[inline(always)]
     pub fn get_storage_mut<T>(&mut self) -> &mut F::Storage<T>
     where
         T: 'static,
@@ -378,10 +420,12 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
     /// Fetch family-trait storage by TypeId.
     /// - For `VecFamily`: `&dyn TraitVecStorage<Dyn>`
     /// - For `SingleFamily`: `&dyn TraitSingleStorage<Dyn>`
+    #[inline(always)]
     pub fn get_trait_storage(&self, id: TypeId) -> Option<&F::Trait> {
         self.entries.get(&id).map(|b| &**b)
     }
 
+    #[inline(always)]
     pub fn get_trait_storage_mut(&mut self, id: TypeId) -> Option<&mut F::Trait> {
         self.entries.get_mut(&id).map(|b| &mut **b)
     }
