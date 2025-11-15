@@ -1,6 +1,6 @@
 //! # trait_type_map
 //!
-//! A type-indexed map for storing values implementing a specific trait and fetching them by said trait or concrete type.
+//! A type-indexed map for storing values of multiple types implementing a specific trait and fetching them by said trait or concrete type.
 //! With support for both single-value and multi-value storage per type.
 //!
 //! ## Features
@@ -53,16 +53,6 @@
 //! }
 //! # }
 //! ```
-//!
-//! ## Storage Families
-//!
-//! ### VecFamily - Multiple Values Per Type
-//!
-//! Use `VecFamily` when you need to store multiple instances of each type.
-//!
-//! ### SingleFamily - One Value Per Type
-//!
-//! Use `SingleFamily` when you only need to store one instance of each type.
 
 mod trait_type_map;
 pub use trait_type_map::*;
