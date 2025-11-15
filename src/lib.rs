@@ -1,6 +1,6 @@
 //! # trait_type_map
 //!
-//! A type-indexed map for storing values of multiple types implementing a specific trait and fetching them by said trait or concrete type.
+//! A type-indexed map for storing values implementing a specific trait and fetching them by said trait or concrete type.
 //! With support for both single-value and multi-value storage per type.
 //!
 //! ## Features
