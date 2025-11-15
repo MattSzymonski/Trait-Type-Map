@@ -17,7 +17,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-trait_type_map = "0.1.0"
+trait_type_map = "1.0.0"
 ```
 
 ## Quick Start
