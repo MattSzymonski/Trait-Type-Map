@@ -1,0 +1,15 @@
+[package]
+name = "trait_type_map"
+version = "1.0.0"
+edition = "2021"
+authors = ["Mateusz Matt Szymoński <matt.szymonski@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "A type-indexed map for storing values implementing a specific trait and fetching them by said trait or concrete type."
+repository = "https://github.com/yourusername/trait_type_map"
+documentation = "https://docs.rs/trait_type_map"
+readme = "README.md"
+keywords = ["type-map", "trait-object", "heterogeneous", "storage", "registry"]
+categories = ["data-structures", "rust-patterns"]
+
+[dependencies]
+dyn-clone = "1.0.20"
