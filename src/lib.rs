@@ -53,16 +53,6 @@
 //! }
 //! # }
 //! ```
-//!
-//! ## Storage Families
-//!
-//! ### VecFamily - Multiple Values Per Type
-//!
-//! Use `VecFamily` when you need to store multiple instances of each type.
-//!
-//! ### SingleFamily - One Value Per Type
-//!
-//! Use `SingleFamily` when you only need to store one instance of each type.
 
 mod trait_type_map;
 pub use trait_type_map::*;
