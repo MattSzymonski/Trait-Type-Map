@@ -44,7 +44,7 @@ macro_rules! impl_trait_accessible {
 
 /// Storage for multiple values of a single type in a vector.
 ///
-/// Values can be accessed by index, and removed values leave `None` in their place.
+/// Values can be accessed by index.
 pub struct VecStorage<T, Dyn: ?Sized> {
     pub data: Vec<T>,
     trait_accessor: TraitAccessor<T, Dyn>,
@@ -93,6 +93,9 @@ impl<T, Dyn: ?Sized> VecStorage<T, Dyn> {
     }
 }
 
+/// Trait object interface for vector storage.
+///
+/// This allows accessing stored values as trait objects without knowing the concrete type.
 pub trait TraitVecStorage<Dyn: ?Sized>: Any {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -135,11 +138,12 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecStorage<T, D
     }
 }
 
+/// Marker type for the vector storage family.
 pub struct VecFamily;
 
 /* ==================== Vector Option backend ==================== */
 
-/// Storage for multiple values of a single type in a vector.
+/// Storage for multiple optional values of a single type in a vector.
 ///
 /// Values can be accessed by index, and removed values leave `None` in their place.
 pub struct VecOptionStorage<T, Dyn: ?Sized> {
@@ -210,7 +214,7 @@ impl<T, Dyn: ?Sized> VecOptionStorage<T, Dyn> {
     }
 }
 
-/// Trait object interface for vector storage.
+/// Trait object interface for vector option storage.
 ///
 /// This allows accessing stored values as trait objects without knowing the concrete type.
 pub trait TraitVecOptionStorage<Dyn: ?Sized>: Any {
@@ -258,10 +262,10 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitVecOptionStorage<Dyn> for VecOption
     }
 }
 
-/// Marker type for the vector storage family.
+/// Marker type for the vector option storage family.
 pub struct VecOptionFamily;
 
-/* ==================== Single backend ==================== */
+/* ==================== Single Option backend ==================== */
 
 /// Storage for a single optional value of a type.
 pub struct OptionStorage<T, Dyn: ?Sized> {
@@ -361,11 +365,11 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitOptionStorage<Dyn> for OptionStorag
 /// Marker type for the single-value storage family.
 pub struct OptionFamily;
 
-/* =============== Family binding (stable) ================= */
+/* =============== Storage family binding ================= */
 
 /// Storage family trait that determines how values are stored. The family trait is generic over the **trait object** `Dyn`.
-/// Each impl chooses its trait trait (`dyn TraitVecStorage<Dyn>` or `dyn TraitSingleStorage<Dyn>`)
-/// and its typed storage (`VecOptionStorage<T, Dyn>` or `OptionStorage<T, Dyn>`).
+/// Each impl chooses its trait type (`dyn TraitVecStorage<Dyn>`, `dyn TraitVecOptionStorage<Dyn>`, or `dyn TraitOptionStorage<Dyn>`)
+/// and its typed storage (`VecStorage<T, Dyn>`, `VecOptionStorage<T, Dyn>`, or `OptionStorage<T, Dyn>`).
 pub trait StorageFamily<Dyn: ?Sized + 'static> {
     type Trait: ?Sized + 'static;
     type Storage<T: 'static>: 'static;
@@ -455,12 +459,12 @@ pub trait TraitAccessible<Dyn: ?Sized> {
 /// # Type Parameters
 ///
 /// - `Dyn`: The trait object type (e.g., `dyn MyTrait`)
-/// - `F`: The storage family (`VecFamily` or `SingleFamily`)
+/// - `F`: The storage family (`VecFamily`, `VecOptionFamily`, or `OptionFamily`)
 ///
 /// # Examples
 ///
 /// ```rust
-/// use trait_type_map::{impl_trait_accessible, TraitTypeMap, SingleFamily};
+/// use trait_type_map::{impl_trait_accessible, TraitTypeMap, OptionFamily};
 ///
 /// trait Animal {
 ///     fn name(&self) -> &str;
@@ -473,7 +477,7 @@ pub trait TraitAccessible<Dyn: ?Sized> {
 ///
 /// impl_trait_accessible!(dyn Animal; Dog);
 ///
-/// let mut map: TraitTypeMap<dyn Animal, SingleFamily> = TraitTypeMap::new();
+/// let mut map: TraitTypeMap<dyn Animal, OptionFamily> = TraitTypeMap::new();
 /// map.register_type_storage::<Dog>();
 /// map.get_storage_mut::<Dog>().set(Dog { name: "Rex".into() });
 ///
@@ -544,7 +548,8 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
 
     /// Fetch family-trait storage by TypeId.
     /// - For `VecFamily`: `&dyn TraitVecStorage<Dyn>`
-    /// - For `SingleFamily`: `&dyn TraitSingleStorage<Dyn>`
+    /// - For `VecOptionFamily`: `&dyn TraitVecOptionStorage<Dyn>`
+    /// - For `OptionFamily`: `&dyn TraitOptionStorage<Dyn>`
     #[inline(always)]
     pub fn get_trait_storage(&self, id: TypeId) -> Option<&F::Trait> {
         self.entries.get(&id).map(|b| &**b)
