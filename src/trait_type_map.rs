@@ -45,6 +45,103 @@ macro_rules! impl_trait_accessible {
 /// Storage for multiple values of a single type in a vector.
 ///
 /// Values can be accessed by index, and removed values leave `None` in their place.
+pub struct VecStorage<T, Dyn: ?Sized> {
+    pub data: Vec<T>,
+    trait_accessor: TraitAccessor<T, Dyn>,
+}
+impl<T, Dyn: ?Sized> VecStorage<T, Dyn> {
+    pub fn new(trait_accessor: TraitAccessor<T, Dyn>) -> Self {
+        Self {
+            data: Vec::new(),
+            trait_accessor,
+        }
+    }
+
+    pub fn push(&mut self, v: T) -> usize {
+        let idx = self.data.len();
+        self.data.push(v);
+        idx
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
+    }
+
+    pub fn get(&self, i: usize) -> &T {
+        self.data.get(i).unwrap()
+    }
+
+    pub fn get_mut(&mut self, i: usize) -> &mut T {
+        self.data.get_mut(i).unwrap()
+    }
+
+    pub fn get_dyn(&self, i: usize) -> &Dyn {
+        (self.trait_accessor.up_ref)(self.get(i))
+    }
+
+    pub fn get_dyn_mut(&mut self, i: usize) -> &mut Dyn {
+        let up_mut = self.trait_accessor.up_mut;
+        up_mut(self.get_mut(i))
+    }
+
+    pub fn swap_remove(&mut self, i: usize) -> T {
+        self.data.swap_remove(i)
+    }
+
+    pub fn take_boxed(&mut self, i: usize) -> Box<Dyn> {
+        (self.trait_accessor.up_box)(self.data.swap_remove(i))
+    }
+}
+
+pub trait TraitVecStorage<Dyn: ?Sized>: Any {
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    fn get(&self, idx: usize) -> &Dyn;
+    fn get_mut(&mut self, idx: usize) -> &mut Dyn;
+    fn take_boxed(&mut self, idx: usize) -> Box<Dyn>;
+    fn swap_remove(&mut self, idx: usize);
+    fn as_storage_any(&self) -> &dyn Any;
+    fn as_storage_any_mut(&mut self) -> &mut dyn Any;
+}
+impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecStorage<T, Dyn> {
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn get(&self, idx: usize) -> &Dyn {
+        VecStorage::<T, Dyn>::get_dyn(self, idx)
+    }
+
+    fn get_mut(&mut self, idx: usize) -> &mut Dyn {
+        VecStorage::<T, Dyn>::get_dyn_mut(self, idx)
+    }
+
+    fn take_boxed(&mut self, idx: usize) -> Box<Dyn> {
+        VecStorage::<T, Dyn>::take_boxed(self, idx)
+    }
+
+    fn swap_remove(&mut self, idx: usize) {
+        VecStorage::<T, Dyn>::swap_remove(self, idx);
+    }
+
+    fn as_storage_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_storage_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+pub struct VecFamily;
+
+/* ==================== Vector Option backend ==================== */
+
+/// Storage for multiple values of a single type in a vector.
+///
+/// Values can be accessed by index, and removed values leave `None` in their place.
 pub struct VecOptionStorage<T, Dyn: ?Sized> {
     pub data: Vec<Option<T>>,
     trait_accessor: TraitAccessor<T, Dyn>,
@@ -91,12 +188,16 @@ impl<T, Dyn: ?Sized> VecOptionStorage<T, Dyn> {
     pub fn take_boxed(&mut self, i: usize) -> Option<Box<Dyn>> {
         self.take(i).map(|v| (self.trait_accessor.up_box)(v))
     }
+
+    pub fn swap_remove(&mut self, i: usize) -> Option<T> {
+        self.data.swap_remove(i)
+    }
 }
 
 /// Trait object interface for vector storage.
 ///
 /// This allows accessing stored values as trait objects without knowing the concrete type.
-pub trait TraitVecStorage<Dyn: ?Sized>: Any {
+pub trait TraitVecOptionStorage<Dyn: ?Sized>: Any {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -104,10 +205,11 @@ pub trait TraitVecStorage<Dyn: ?Sized>: Any {
     fn get(&self, idx: usize) -> Option<&Dyn>;
     fn get_mut(&mut self, idx: usize) -> Option<&mut Dyn>;
     fn take_boxed(&mut self, idx: usize) -> Option<Box<Dyn>>;
+    fn swap_remove(&mut self, idx: usize);
     fn as_storage_any(&self) -> &dyn Any;
     fn as_storage_any_mut(&mut self) -> &mut dyn Any;
 }
-impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecOptionStorage<T, Dyn> {
+impl<T: 'static, Dyn: ?Sized + 'static> TraitVecOptionStorage<Dyn> for VecOptionStorage<T, Dyn> {
     fn len(&self) -> usize {
         self.data.iter().filter(|o| o.is_some()).count()
     }
@@ -124,6 +226,10 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecOptionStorag
         VecOptionStorage::<T, Dyn>::take_boxed(self, idx)
     }
 
+    fn swap_remove(&mut self, idx: usize) {
+        self.data.swap_remove(idx);
+    }
+
     fn as_storage_any(&self) -> &dyn Any {
         self
     }
@@ -134,7 +240,7 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecOptionStorag
 }
 
 /// Marker type for the vector storage family.
-pub struct VecFamily;
+pub struct VecOptionFamily;
 
 /* ==================== Single backend ==================== */
 
@@ -188,7 +294,7 @@ impl<T, Dyn: ?Sized> OptionStorage<T, Dyn> {
 /// Trait object interface for single-value storage.
 ///
 /// This allows accessing the stored value as a trait object without knowing the concrete type.
-pub trait TraitSingleStorage<Dyn: ?Sized>: Any {
+pub trait TraitOptionStorage<Dyn: ?Sized>: Any {
     fn is_some(&self) -> bool;
     fn get(&self) -> Option<&Dyn>;
     fn get_mut(&mut self) -> Option<&mut Dyn>;
@@ -196,7 +302,7 @@ pub trait TraitSingleStorage<Dyn: ?Sized>: Any {
     fn as_storage_any(&self) -> &dyn Any;
     fn as_storage_any_mut(&mut self) -> &mut dyn Any;
 }
-impl<T: 'static, Dyn: ?Sized + 'static> TraitSingleStorage<Dyn> for OptionStorage<T, Dyn> {
+impl<T: 'static, Dyn: ?Sized + 'static> TraitOptionStorage<Dyn> for OptionStorage<T, Dyn> {
     fn is_some(&self) -> bool {
         self.is_some()
     }
@@ -223,7 +329,7 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitSingleStorage<Dyn> for OptionStorag
 }
 
 /// Marker type for the single-value storage family.
-pub struct SingleFamily;
+pub struct OptionFamily;
 
 /* =============== Family binding (stable) ================= */
 
@@ -241,6 +347,27 @@ pub trait StorageFamily<Dyn: ?Sized + 'static> {
 
 impl<D: ?Sized + 'static> StorageFamily<D> for VecFamily {
     type Trait = dyn TraitVecStorage<D>;
+    type Storage<T: 'static> = VecStorage<T, D>;
+
+    fn make<T: 'static>(trait_accessor: TraitAccessor<T, D>) -> Box<Self::Trait> {
+        Box::new(VecStorage::<T, D>::new(trait_accessor))
+    }
+
+    fn storage_ref<T: 'static>(e: &Self::Trait) -> &Self::Storage<T> {
+        e.as_storage_any()
+            .downcast_ref::<VecStorage<T, D>>()
+            .expect("wrong T for VecFamily")
+    }
+
+    fn storage_mut<T: 'static>(e: &mut Self::Trait) -> &mut Self::Storage<T> {
+        e.as_storage_any_mut()
+            .downcast_mut::<VecStorage<T, D>>()
+            .expect("wrong T for VecFamily")
+    }
+}
+
+impl<D: ?Sized + 'static> StorageFamily<D> for VecOptionFamily {
+    type Trait = dyn TraitVecOptionStorage<D>;
     type Storage<T: 'static> = VecOptionStorage<T, D>;
 
     fn make<T: 'static>(trait_accessor: TraitAccessor<T, D>) -> Box<Self::Trait> {
@@ -250,18 +377,18 @@ impl<D: ?Sized + 'static> StorageFamily<D> for VecFamily {
     fn storage_ref<T: 'static>(e: &Self::Trait) -> &Self::Storage<T> {
         e.as_storage_any()
             .downcast_ref::<VecOptionStorage<T, D>>()
-            .expect("wrong T for VecFamily")
+            .expect("wrong T for VecOptionFamily")
     }
 
     fn storage_mut<T: 'static>(e: &mut Self::Trait) -> &mut Self::Storage<T> {
         e.as_storage_any_mut()
             .downcast_mut::<VecOptionStorage<T, D>>()
-            .expect("wrong T for VecFamily")
+            .expect("wrong T for VecOptionFamily")
     }
 }
 
-impl<D: ?Sized + 'static> StorageFamily<D> for SingleFamily {
-    type Trait = dyn TraitSingleStorage<D>;
+impl<D: ?Sized + 'static> StorageFamily<D> for OptionFamily {
+    type Trait = dyn TraitOptionStorage<D>;
     type Storage<T: 'static> = OptionStorage<T, D>;
 
     fn make<T: 'static>(trait_accessor: TraitAccessor<T, D>) -> Box<Self::Trait> {
@@ -271,13 +398,13 @@ impl<D: ?Sized + 'static> StorageFamily<D> for SingleFamily {
     fn storage_ref<T: 'static>(e: &Self::Trait) -> &Self::Storage<T> {
         e.as_storage_any()
             .downcast_ref::<OptionStorage<T, D>>()
-            .expect("wrong T for SingleFamily")
+            .expect("wrong T for OptionFamily")
     }
 
     fn storage_mut<T: 'static>(e: &mut Self::Trait) -> &mut Self::Storage<T> {
         e.as_storage_any_mut()
             .downcast_mut::<OptionStorage<T, D>>()
-            .expect("wrong T for SingleFamily")
+            .expect("wrong T for OptionFamily")
     }
 }
 

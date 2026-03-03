@@ -1,6 +1,6 @@
 // Run with: cargo run --example basic_usage
 
-use trait_type_map::{SingleFamily, TraitTypeMap, VecFamily, impl_trait_accessible};
+use trait_type_map::{impl_trait_accessible, OptionFamily, TraitTypeMap, VecOptionFamily};
 
 // Define a trait that our types will implement
 trait Animal {
@@ -61,7 +61,7 @@ fn main() {
 
 fn vector_storage_example() {
     // Create a map using VecFamily (stores multiple instances per type)
-    let mut map: TraitTypeMap<dyn Animal, VecFamily> = TraitTypeMap::new();
+    let mut map: TraitTypeMap<dyn Animal, VecOptionFamily> = TraitTypeMap::new();
 
     // Register the types we want to store
     map.register_type_storage::<Dog>();
@@ -159,7 +159,7 @@ fn vector_storage_example() {
 
 fn single_storage_example() {
     // Create a map using SingleFamily (stores at most one instance per type)
-    let mut map: TraitTypeMap<dyn Animal, SingleFamily> = TraitTypeMap::new();
+    let mut map: TraitTypeMap<dyn Animal, OptionFamily> = TraitTypeMap::new();
 
     // Register the types we want to store
     map.register_type_storage::<Dog>();
