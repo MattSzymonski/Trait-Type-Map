@@ -75,6 +75,22 @@ impl<T, Dyn: ?Sized> VecStorage<T, Dyn> {
         self.data.get_mut(i).unwrap()
     }
 
+    /// # Safety
+    /// `i` must be < `self.data.len()`. The query system guarantees this
+    /// because `self.current_entity_idx < self.current_archetype_len`
+    /// and archetype entity count == storage length.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, i: usize) -> &T {
+        unsafe { self.data.get_unchecked(i) }
+    }
+
+    /// # Safety
+    /// `i` must be < `self.data.len()`. Same invariant as [`get_unchecked`].
+    #[inline]
+    pub unsafe fn get_mut_unchecked(&mut self, i: usize) -> &mut T {
+        unsafe { &mut *self.data.as_mut_ptr().add(i) }
+    }
+
     pub fn get_dyn(&self, i: usize) -> &Dyn {
         (self.trait_accessor.up_ref)(self.get(i))
     }
