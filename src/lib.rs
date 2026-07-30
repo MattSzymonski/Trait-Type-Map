@@ -5,10 +5,10 @@
 //!
 //! ## Features
 //!
-//! - **Type-safe storage**: Store different types implementing the same trait in a single map
-//! - **Flexible storage backends**: Choose between single-value (`SingleFamily`) or multi-value (`VecFamily`) storage per type
-//! - **Trait object access**: Access stored values as trait objects without knowing the concrete type
-//! - **Type-indexed retrieval**: Retrieve values by their concrete type with zero runtime overhead
+//! - Type-safe storage: Store different types implementing the same trait in a single map
+//! - Flexible storage backends: Choose between single-value (`SingleFamily`) or multi-value (`VecFamily`) storage per type
+//! - Trait object access: Access stored values as trait objects without knowing the concrete type
+//! - Type-indexed retrieval: Retrieve values by their concrete type with zero runtime overhead
 //!
 //! ## Quick Start
 //!

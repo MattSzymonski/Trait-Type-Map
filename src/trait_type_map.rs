@@ -383,7 +383,7 @@ pub struct OptionFamily;
 
 /* =============== Storage family binding ================= */
 
-/// Storage family trait that determines how values are stored. The family trait is generic over the **trait object** `Dyn`.
+/// Storage family trait that determines how values are stored. The family trait is generic over the trait object `Dyn`.
 /// Each impl chooses its trait type (`dyn TraitVecStorage<Dyn>`, `dyn TraitVecOptionStorage<Dyn>`, or `dyn TraitOptionStorage<Dyn>`)
 /// and its typed storage (`VecStorage<T, Dyn>`, `VecOptionStorage<T, Dyn>`, or `OptionStorage<T, Dyn>`).
 pub trait StorageFamily<Dyn: ?Sized + 'static> {
@@ -547,7 +547,7 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
             .entries
             .get(&TypeId::of::<T>())
             .expect("type not registered");
-        F::storage_ref::<T>(&**e)
+        F::storage_ref::<T>(&e)
     }
 
     #[inline(always)]
@@ -559,7 +559,7 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
             .entries
             .get_mut(&TypeId::of::<T>())
             .expect("type not registered");
-        F::storage_mut::<T>(&mut **e)
+        F::storage_mut::<T>(e)
     }
 
     /// Fetch family-trait storage by TypeId.
@@ -568,11 +568,11 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
     /// - For `OptionFamily`: `&dyn TraitOptionStorage<Dyn>`
     #[inline(always)]
     pub fn get_trait_storage(&self, id: TypeId) -> Option<&F::Trait> {
-        self.entries.get(&id).map(|b| &**b)
+        self.entries.get(&id).map(|boxed| &**boxed)
     }
 
     #[inline(always)]
     pub fn get_trait_storage_mut(&mut self, id: TypeId) -> Option<&mut F::Trait> {
-        self.entries.get_mut(&id).map(|b| &mut **b)
+        self.entries.get_mut(&id).map(|boxed| &mut **boxed)
     }
 }
