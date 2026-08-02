@@ -1,12 +1,12 @@
 //! # trait_type_map
 //!
 //! A type-indexed map for storing values implementing a specific trait and fetching them by said trait or concrete type.
-//! With support for both single-value and multi-value storage per type.
+//! With support for single-value, multi-value, and sparse-optional storage per type.
 //!
 //! ## Features
 //!
 //! - Type-safe storage: Store different types implementing the same trait in a single map
-//! - Flexible storage backends: Choose between single-value (`SingleFamily`) or multi-value (`VecFamily`) storage per type
+//! - Flexible storage backends: Choose `OptionFamily` (single value), `VecFamily` (multiple values), or `VecOptionFamily` (sparse optional values) per type
 //! - Trait object access: Access stored values as trait objects without knowing the concrete type
 //! - Type-indexed retrieval: Retrieve values by their concrete type with zero runtime overhead
 //!
