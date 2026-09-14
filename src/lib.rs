@@ -43,14 +43,12 @@
 //! map.register_type_storage::<Cat>();
 //!
 //! // Store values
-//! let dog_idx = map.get_storage_mut::<Dog>().push(Dog);
-//! let cat_idx = map.get_storage_mut::<Cat>().push(Cat);
+//! map.get_storage_mut::<Dog>().push(Dog);
+//! map.get_storage_mut::<Cat>().push(Cat);
 //!
 //! // Access via trait object
 //! let dog_storage = map.get_storage::<Dog>();
-//! if let Some(animal) = dog_storage.get_dyn(dog_idx) {
-//!     assert_eq!(animal.speak(), "Woof!");
-//! }
+//! assert_eq!(dog_storage.get_dyn(0).speak(), "Woof!");
 //! # }
 //! ```
 
