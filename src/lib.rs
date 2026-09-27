@@ -1,14 +1,21 @@
 //! # trait_type_map
 //!
-//! A type-indexed map for storing values implementing a specific trait and fetching them by said trait or concrete type.
-//! With support for single-value, multi-value, and sparse-optional storage per type.
+//! A type-indexed map for storing values that implement a specific trait, then
+//! retrieving them by concrete type or through the trait.
+//!
+//! Each registered type chooses its storage: single value, multiple values, or
+//! sparse optional slots.
+//!
+//! `ErasedVecFamily` columns are `ErasedVecStorage`, a type-erased column
+//! whose per-type behavior (drop, upcast, boxing) comes from a function table.
+//! Columns can also be built directly and inserted with `insert_erased`.
 //!
 //! ## Features
 //!
-//! - Type-safe storage: Store different types implementing the same trait in a single map
-//! - Flexible storage backends: Choose `OptionFamily` (single value), `VecFamily` (multiple values), or `VecOptionFamily` (sparse optional values) per type
+//! - Type-safe storage: Store different types implementing the same trait in one map
+//! - Flexible storage backends: Choose `OptionFamily` (single value), `VecFamily` (multiple values), `VecOptionFamily` (sparse optional slots), or `ErasedVecFamily` (type-erased columns) per type
 //! - Trait object access: Access stored values as trait objects without knowing the concrete type
-//! - Type-indexed retrieval: Retrieve values by their concrete type with zero runtime overhead
+//! - Type-indexed retrieval: Retrieve values by their concrete type with one `TypeId` lookup
 //!
 //! ## Quick Start
 //!

@@ -3,20 +3,15 @@ use std::alloc::Layout;
 use std::any::{Any, TypeId};
 use std::ptr::NonNull;
 
-/// Accessor functions for converting a concrete type to a trait object.
-///
-/// This struct contains function pointers that handle upcasting from a concrete type `T`
-/// to a trait object `Dyn`.
+/// Function pointers that upcast a concrete `T` to the trait object `Dyn`.
 pub struct TraitAccessor<T, Dyn: ?Sized> {
     pub up_ref: fn(&T) -> &Dyn,
     pub up_mut: fn(&mut T) -> &mut Dyn,
     pub up_box: fn(T) -> Box<Dyn>,
 }
 
-/// Macro for implementing `TraitAccessible` for types.
-///
-/// This macro generates the necessary implementation to make types accessible
-/// via a trait object in the map.
+/// Implements `TraitAccessible` for each listed type, so it can live in a
+/// `TraitTypeMap`.
 ///
 /// # Examples
 ///
@@ -83,17 +78,15 @@ impl<T, Dyn: ?Sized> VecStorage<T, Dyn> {
         self.data.get_mut(i).unwrap()
     }
 
-    //// # Safety
-    //// `i` must be < `self.data.len()`. The query system guarantees this
-    //// because `self.current_entity_idx < self.current_archetype_len`
-    //// and archetype entity count == storage length.
+    /// # Safety
+    /// `i` must be less than `self.data.len()`.
     #[inline]
     pub unsafe fn get_unchecked(&self, i: usize) -> &T {
         unsafe { self.data.get_unchecked(i) }
     }
 
-    //// # Safety
-    //// `i` must be < `self.data.len()`. Same invariant as [`get_unchecked`].
+    /// # Safety
+    /// `i` must be less than `self.data.len()`, as for `get_unchecked`.
     #[inline]
     pub unsafe fn get_mut_unchecked(&mut self, i: usize) -> &mut T {
         unsafe { &mut *self.data.as_mut_ptr().add(i) }
@@ -121,9 +114,9 @@ impl<T, Dyn: ?Sized> VecStorage<T, Dyn> {
     }
 }
 
-/// Trait object interface for vector storage.
+/// Object-safe view over a column of one type, implemented by [`VecStorage`].
 ///
-/// This allows accessing stored values as trait objects without knowing the concrete type.
+/// Rows are reached as `&Dyn` / `&mut Dyn` without naming the element type.
 pub trait TraitVecStorage<Dyn: ?Sized>: Any {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -135,8 +128,7 @@ pub trait TraitVecStorage<Dyn: ?Sized>: Any {
     fn swap_remove(&mut self, idx: usize);
     /// Refresh the per-type function table (see [`ErasedVecStorage::refresh_ops`]).
     ///
-    /// Backends that store per-type function pointers can re-point them at
-    /// still-alive code; other backends ignore the call.
+    /// The default implementation ignores the call.
     fn refresh_ops(&mut self, _ops: ErasedVecStorageOps<Dyn>) {}
     fn as_storage_any(&self) -> &dyn Any;
     fn as_storage_any_mut(&mut self) -> &mut dyn Any;
@@ -178,7 +170,7 @@ impl<T: 'static, Dyn: ?Sized + 'static> TraitVecStorage<Dyn> for VecStorage<T, D
     }
 }
 
-/// Marker type for the vector storage family.
+/// Marker type for the vector storage family, backed by [`VecStorage`].
 pub struct VecFamily;
 
 // =============================================================================
@@ -187,11 +179,8 @@ pub struct VecFamily;
 
 /// Per-type function table for an [`ErasedVecStorage`].
 ///
-/// Carries only data (function pointers) so it can be assembled by whichever
-/// module defines the concrete element type and stored inside a column that
-/// outlives that module. The table can be replaced wholesale via
-/// [`ErasedVecStorage::refresh_ops`] when the pointers must be re-pointed at
-/// code that is still alive.
+/// Plain data rather than a vtable; replaceable via
+/// [`ErasedVecStorage::refresh_ops`].
 pub struct ErasedVecStorageOps<Dyn: ?Sized> {
     /// Drop `count` initialized elements starting at `ptr`.
     pub drop_range: unsafe fn(*mut u8, usize),
@@ -203,8 +192,8 @@ pub struct ErasedVecStorageOps<Dyn: ?Sized> {
     pub take_boxed: unsafe fn(*mut u8, usize) -> Box<Dyn>,
 }
 
-// Function pointers are always `Copy` regardless of their signature, so the
-// table is copyable even though `Dyn` is unsized and unbounded.
+// Hand-written so the impl does not demand `Dyn: Clone`; the table is nothing
+// but function pointers.
 impl<Dyn: ?Sized> Clone for ErasedVecStorageOps<Dyn> {
     fn clone(&self) -> Self {
         *self
@@ -215,9 +204,6 @@ impl<Dyn: ?Sized> Copy for ErasedVecStorageOps<Dyn> {}
 
 impl<Dyn: ?Sized + 'static> ErasedVecStorageOps<Dyn> {
     /// Assemble the function table for a concrete element type.
-    ///
-    /// The returned table is plain data; it is stored in the column and never
-    /// monomorphized into a persistent trait-object vtable.
     pub fn of<T: 'static + TraitAccessible<Dyn>>() -> Self {
         Self {
             drop_range: drop_range_of::<T>,
@@ -229,8 +215,7 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorageOps<Dyn> {
 }
 
 /// Runtime description of an erased column, assembled by the caller that knows
-/// the concrete element type so the column can be built without monomorphizing
-/// that type into the storage backend.
+/// the concrete element type.
 pub struct ErasedVecStorageInfo<Dyn: ?Sized> {
     /// Runtime type identity of the stored element.
     pub type_id: TypeId,
@@ -238,8 +223,7 @@ pub struct ErasedVecStorageInfo<Dyn: ?Sized> {
     pub size: usize,
     /// Alignment in bytes of one element.
     pub align: usize,
-    /// Whether the column's element type is identified by its layout rather
-    /// than by [`TypeId`]; see [`ErasedVecStorage`] for what that trades away.
+    /// Whether the element type is identified by layout rather than `TypeId`.
     pub shared_identity: bool,
     /// Per-type function table.
     pub ops: ErasedVecStorageOps<Dyn>,
@@ -255,9 +239,6 @@ impl<Dyn: ?Sized> Copy for ErasedVecStorageInfo<Dyn> {}
 
 impl<Dyn: ?Sized + 'static> ErasedVecStorageInfo<Dyn> {
     /// Build a column description for a concrete element type.
-    ///
-    /// The column identifies its element by `TypeId`, which is the strict
-    /// default: only the exact `T` this was built from can read or write it.
     pub fn of<T: 'static + TraitAccessible<Dyn>>() -> Self {
         Self {
             type_id: TypeId::of::<T>(),
@@ -271,19 +252,13 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorageInfo<Dyn> {
     /// Build a column description whose element type is identified by its
     /// **layout** (size and alignment) rather than by `TypeId`.
     ///
-    /// This exists for one situation: a single type that has been compiled
-    /// into two binaries loaded in one process. `TypeId` is a hash over the
-    /// crate name, its `-C metadata` disambiguator and the type path, computed
-    /// per compilation unit, so each binary gets a different `TypeId` for what
-    /// the programmer wrote as one type. A column shared between them cannot
-    /// be keyed on either.
+    /// This exists for one situation: the same type under two different
+    /// `TypeId`s.
     ///
-    /// The caller takes on the obligation `TypeId` was discharging: that every
-    /// `T` used with this column really is the same type. Matching size and
-    /// alignment is necessary but not sufficient - `{f32, f32}` and
-    /// `{u32, u32}` agree on both - so the caller must verify the full field
-    /// layout before creating the column, and only then is the reduced check
-    /// here sound.
+    /// The caller takes on the obligation `TypeId` normally provides: every
+    /// `T` used with this column must really be the same type. Size and
+    /// alignment alone do not prove that - `{f32, f32}` and `{u32, u32}` agree
+    /// on both - so the caller must verify the full field layout.
     pub fn of_shared<T: 'static + TraitAccessible<Dyn>>() -> Self {
         Self {
             shared_identity: true,
@@ -347,13 +322,9 @@ where
 
 /// Type-erased contiguous storage column whose element type is opaque.
 ///
-/// Unlike [`VecStorage`], the concrete column type is **not** generic over the
-/// element type, so a map can store it as a concrete `Box<ErasedVecStorage>`
-/// without any trait-object vtable. Per-type behavior (drop, upcast, boxing)
-/// is carried by an [`ErasedVecStorageOps`] function table supplied by the
-/// caller; callers that store columns across module boundaries can refresh the
-/// table via [`ErasedVecStorage::refresh_ops`] so the pointers always reference
-/// code that is still alive.
+/// Unlike [`VecStorage`], the column type is not generic over the element
+/// type. Per-type behavior (drop, upcast, boxing) comes from an
+/// [`ErasedVecStorageOps`] function table supplied by the caller.
 pub struct ErasedVecStorage<Dyn: ?Sized> {
     /// Runtime type identity of the stored element.
     type_id: TypeId,
@@ -364,7 +335,8 @@ pub struct ErasedVecStorage<Dyn: ?Sized> {
     /// Whether element-type checks compare layout instead of `type_id`; set
     /// through [`ErasedVecStorageInfo::of_shared`].
     shared_identity: bool,
-    /// Heap allocation holding the rows (dangling before the first growth).
+    /// Heap allocation holding the rows (an aligned dangling pointer before
+    /// the first growth).
     data: NonNull<u8>,
     /// Number of initialized rows.
     len: usize,
@@ -380,6 +352,13 @@ pub struct ErasedVecStorage<Dyn: ?Sized> {
 unsafe impl<Dyn: ?Sized> Send for ErasedVecStorage<Dyn> {}
 unsafe impl<Dyn: ?Sized> Sync for ErasedVecStorage<Dyn> {}
 
+/// A non-null, correctly aligned pointer for a column that owns no allocation.
+fn unallocated_pointer(align: usize) -> NonNull<u8> {
+    debug_assert!(align.is_power_of_two(), "alignment was validated");
+    // SAFETY: a validated alignment is a power of two, so it is never zero.
+    unsafe { NonNull::new_unchecked(align as *mut u8) }
+}
+
 impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
     /// Creates an empty column from a type description.
     pub fn new(info: ErasedVecStorageInfo<Dyn>) -> Self {
@@ -388,7 +367,7 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
             elem_size: info.size,
             elem_align: info.align,
             shared_identity: info.shared_identity,
-            data: NonNull::dangling(),
+            data: unallocated_pointer(info.align),
             len: 0,
             capacity: 0,
             ops: info.ops,
@@ -424,18 +403,15 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
     /// Check that `T` is an acceptable element type for this column, panicking
     /// with `method` named if it is not.
     ///
-    /// An ordinary column demands the exact `TypeId` it was built from. A
-    /// shared-identity column cannot: its whole purpose is to be reached from
-    /// a second binary, whose `TypeId` for the same type differs. It checks
-    /// layout instead, which catches an outright wrong `T` while accepting the
-    /// other binary's copy of the right one.
+    /// Ordinary columns demand the exact `TypeId` they were built from;
+    /// shared-identity columns check layout instead.
     #[inline]
     fn assert_element_type<T: 'static>(&self, method: &str) {
         if self.shared_identity {
             assert!(
                 std::mem::size_of::<T>() == self.elem_size
                     && std::mem::align_of::<T>() == self.elem_align,
-                "ErasedVecStorage::{method} with a type whose layout does not match the                  shared column ({} bytes / {} align against the column's {} / {})",
+                "ErasedVecStorage::{method} with a type whose layout does not match the shared column ({} bytes / {} align against the column's {} / {})",
                 std::mem::size_of::<T>(),
                 std::mem::align_of::<T>(),
                 self.elem_size,
@@ -450,11 +426,7 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
         }
     }
 
-    /// Replace the per-type function table.
-    ///
-    /// Lets the owner re-point the stored function pointers at still-alive
-    /// code (for example after the module that supplied the table is
-    /// reloaded) without touching the rows.
+    /// Replace the per-type function table without touching the rows.
     pub fn refresh_ops(&mut self, ops: ErasedVecStorageOps<Dyn>) {
         self.ops = ops;
     }
@@ -591,13 +563,6 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
 
     // =========================================================================
     // Type-erased byte access
-    //
-    // The engine exposes native columns to the C# backend as raw byte chunks
-    // (mirroring the dynamic-column path). These methods are project-agnostic:
-    // they only re-expose facts the column already owns (element size and the
-    // raw row buffer) plus a byte push for deferred commands. The caller is
-    // responsible for matching the element size and not retaining the pointer
-    // beyond the active managed-system invocation.
     // =========================================================================
 
     /// Size in bytes of one stored row.
@@ -621,8 +586,7 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
     /// Returns a mutable raw pointer to the first row, without a concrete
     /// element type.
     ///
-    /// The pointer stays valid until the column grows or is dropped; callers
-    /// must not retain it beyond the scope that owns the column.
+    /// Same validity window as [`ErasedVecStorage::raw_ptr`].
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
         self.data.as_ptr()
     }
@@ -705,8 +669,8 @@ impl<Dyn: ?Sized + 'static> ErasedVecStorage<Dyn> {
             idx < self.len,
             "ErasedVecStorage::get_dyn index out of bounds"
         );
-        // SAFETY: bounds checked; the function table is refreshed so the
-        // upcast function references still-alive code.
+        // SAFETY: `idx` is in bounds, and `up_ref` returns a valid `Dyn`
+        // pointer for the live row at that address.
         let ptr = unsafe { (self.ops.up_ref)(self.data.as_ptr().add(idx * self.elem_size)) };
         unsafe { &*ptr }
     }
@@ -790,6 +754,10 @@ impl<Dyn: ?Sized> Drop for ErasedVecStorage<Dyn> {
     }
 }
 
+/// Marker type for the type-erased vector storage family, backed by
+/// [`ErasedVecStorage`].
+pub struct ErasedVecFamily;
+
 // =============================================================================
 // Vector Option Backend
 // =============================================================================
@@ -800,7 +768,7 @@ impl<Dyn: ?Sized> Drop for ErasedVecStorage<Dyn> {
 pub struct VecOptionStorage<T, Dyn: ?Sized> {
     pub data: Vec<Option<T>>,
     trait_accessor: TraitAccessor<T, Dyn>,
-    //// Cached count of non-None elements for O(1) len()
+    /// Cached count of present values, so `len()` is O(1).
     count: usize,
 }
 impl<T, Dyn: ?Sized> VecOptionStorage<T, Dyn> {
@@ -875,9 +843,10 @@ impl<T, Dyn: ?Sized> VecOptionStorage<T, Dyn> {
     }
 }
 
-/// Trait object interface for vector option storage.
+/// Object-safe view over a sparse column of one type, implemented by
+/// [`VecOptionStorage`].
 ///
-/// This allows accessing stored values as trait objects without knowing the concrete type.
+/// Cleared slots stay in place as `None` instead of compacting the column.
 pub trait TraitVecOptionStorage<Dyn: ?Sized>: Any {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -1001,9 +970,7 @@ impl<T, Dyn: ?Sized> OptionStorage<T, Dyn> {
     }
 }
 
-/// Trait object interface for single-value storage.
-///
-/// This allows accessing the stored value as a trait object without knowing the concrete type.
+/// Object-safe view over a single-slot storage, implemented by [`OptionStorage`].
 pub trait TraitOptionStorage<Dyn: ?Sized>: Any {
     fn is_some(&self) -> bool;
     fn get(&self) -> Option<&Dyn>;
@@ -1054,9 +1021,10 @@ pub struct OptionFamily;
 // Storage Family Binding
 // =============================================================================
 
-/// Storage family trait that determines how values are stored. The family trait is generic over the trait object `Dyn`.
-/// Each impl chooses its trait type (`dyn TraitVecStorage<Dyn>`, `dyn TraitVecOptionStorage<Dyn>`, or `dyn TraitOptionStorage<Dyn>`)
-/// and its typed storage (`VecStorage<T, Dyn>`, `VecOptionStorage<T, Dyn>`, or `OptionStorage<T, Dyn>`).
+/// Maps a storage family marker to the column layout a `TraitTypeMap` uses.
+///
+/// Each impl picks the object-safe `Trait` type and the typed `Storage<T>`
+/// behind it.
 pub trait StorageFamily<Dyn: ?Sized + 'static> {
     type Trait: ?Sized + 'static;
     type Storage<T: 'static>: 'static;
@@ -1064,8 +1032,7 @@ pub trait StorageFamily<Dyn: ?Sized + 'static> {
     /// Allocate a storage column for `T`.
     ///
     /// `ops` carries the per-type function table required by the
-    /// [`ErasedVecStorage`] backend; the option/option-vector families ignore
-    /// it.
+    /// [`ErasedVecFamily`] backend; the other families ignore it.
     fn make<T: 'static>(
         trait_accessor: TraitAccessor<T, Dyn>,
         ops: Option<ErasedVecStorageOps<Dyn>>,
@@ -1075,10 +1042,36 @@ pub trait StorageFamily<Dyn: ?Sized + 'static> {
 }
 
 impl<D: ?Sized + 'static> StorageFamily<D> for VecFamily {
-    // The storage is intentionally the CONCRETE `ErasedVecStorage`: storing it
-    // as `Box<ErasedVecStorage<D>>` (instead of `Box<dyn TraitVecStorage<D>>`)
-    // means the column carries no trait-object vtable at all, so nothing can
-    // dangle when the code that supplied its function table is unloaded.
+    // Boxed trait object; the erased family keeps its column concrete instead.
+    type Trait = dyn TraitVecStorage<D>;
+    type Storage<T: 'static> = VecStorage<T, D>;
+
+    /// Allocates a new empty VecStorage for type T with the appropriate upcast accessor.
+    fn make<T: 'static>(
+        trait_accessor: TraitAccessor<T, D>,
+        _ops: Option<ErasedVecStorageOps<D>>,
+    ) -> Box<Self::Trait> {
+        Box::new(VecStorage::<T, D>::new(trait_accessor))
+    }
+
+    /// Downcasts the trait object to a concrete VecStorage<T, D> for typed read access.
+    fn storage_ref<T: 'static>(e: &Self::Trait) -> &Self::Storage<T> {
+        e.as_storage_any()
+            .downcast_ref::<VecStorage<T, D>>()
+            .expect("wrong T for VecFamily")
+    }
+
+    /// Downcasts the trait object to a concrete VecStorage<T, D> for typed write access.
+    fn storage_mut<T: 'static>(e: &mut Self::Trait) -> &mut Self::Storage<T> {
+        e.as_storage_any_mut()
+            .downcast_mut::<VecStorage<T, D>>()
+            .expect("wrong T for VecFamily")
+    }
+}
+
+impl<D: ?Sized + 'static> StorageFamily<D> for ErasedVecFamily {
+    // The CONCRETE `ErasedVecStorage`, not `Box<dyn TraitVecStorage<D>>` like
+    // `VecFamily`: the map's entry carries no vtable.
     type Trait = ErasedVecStorage<D>;
     type Storage<T: 'static> = ErasedVecStorage<D>;
 
@@ -1087,7 +1080,7 @@ impl<D: ?Sized + 'static> StorageFamily<D> for VecFamily {
         _trait_accessor: TraitAccessor<T, D>,
         ops: Option<ErasedVecStorageOps<D>>,
     ) -> Box<Self::Trait> {
-        let ops = ops.expect("VecFamily storage requires ErasedVecStorageOps");
+        let ops = ops.expect("ErasedVecFamily storage requires ErasedVecStorageOps");
         Box::new(ErasedVecStorage::<D>::new(ErasedVecStorageInfo {
             type_id: TypeId::of::<T>(),
             size: std::mem::size_of::<T>(),
@@ -1169,10 +1162,9 @@ impl<D: ?Sized + 'static> StorageFamily<D> for OptionFamily {
 // One Map Type
 // =============================================================================
 
-/// Trait for types that can be accessed via a trait object.
+/// A concrete type that can be upcast to the `Dyn` trait object.
 ///
-/// Types implementing this trait can be stored in a `TraitTypeMap`.
-/// Use the `impl_trait_accessible!` macro to implement this trait.
+/// Implemented with the `impl_trait_accessible!` macro.
 pub trait TraitAccessible<Dyn: ?Sized> {
     fn get_accessor() -> TraitAccessor<Self, Dyn>
     where
@@ -1184,7 +1176,7 @@ pub trait TraitAccessible<Dyn: ?Sized> {
 /// # Type Parameters
 ///
 /// - `Dyn`: The trait object type (e.g., `dyn MyTrait`)
-/// - `F`: The storage family (`VecFamily`, `VecOptionFamily`, or `OptionFamily`)
+/// - `F`: The storage family (`VecFamily`, `ErasedVecFamily`, `VecOptionFamily`, or `OptionFamily`)
 ///
 /// # Examples
 ///
@@ -1228,8 +1220,7 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
         }
     }
 
-    //// Create a new map with pre-allocated capacity for the given number of types.
-    //// This can improve performance when you know how many types you'll store.
+    /// Creates an empty map with room for at least `capacity` types.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: AHashMap::with_capacity(capacity),
@@ -1279,10 +1270,8 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
         F::storage_mut::<T>(e)
     }
 
-    //// Fetch family-trait storage by TypeId.
-    //// - For `VecFamily`: `&dyn TraitVecStorage<Dyn>`
-    //// - For `VecOptionFamily`: `&dyn TraitVecOptionStorage<Dyn>`
-    //// - For `OptionFamily`: `&dyn TraitOptionStorage<Dyn>`
+    /// Returns the storage for `id` as `F::Trait`, or `None` when the type is
+    /// not registered.
     #[inline(always)]
     pub fn get_trait_storage(&self, id: TypeId) -> Option<&F::Trait> {
         self.entries.get(&id).map(|boxed| &**boxed)
@@ -1294,19 +1283,17 @@ impl<Dyn: ?Sized + 'static, F: StorageFamily<Dyn>> TraitTypeMap<Dyn, F> {
         self.entries.get_mut(&id).map(|boxed| &mut **boxed)
     }
 
-    //// Remove and return trait storage by TypeId.
+    /// Removes the storage registered for `id` and returns it, if any.
     #[inline]
     pub fn remove_trait_storage(&mut self, id: TypeId) -> Option<Box<F::Trait>> {
         self.entries.remove(&id)
     }
 }
 
-impl<Dyn: ?Sized + 'static> TraitTypeMap<Dyn, VecFamily> {
+impl<Dyn: ?Sized + 'static> TraitTypeMap<Dyn, ErasedVecFamily> {
     /// Insert an erased storage column into the map.
     ///
-    /// The map stores the concrete `ErasedVecStorage` directly (no trait-object
-    /// coercion), so the column carries no vtable that could dangle when the
-    /// code that supplied its function table is unloaded.
+    /// The column is stored concretely, without trait-object coercion.
     pub fn insert_erased(&mut self, column: ErasedVecStorage<Dyn>) {
         let id = column.type_id();
         let inserted = self.entries.insert(id, Box::new(column)).is_none();
@@ -1435,7 +1422,7 @@ mod tests {
         let ordinary = ErasedVecStorage::<dyn Marker>::new(ErasedVecStorageInfo::of::<Point>());
         assert!(!ordinary.has_shared_identity());
 
-        let mut map: TraitTypeMap<dyn Marker, VecFamily> = TraitTypeMap::new();
+        let mut map: TraitTypeMap<dyn Marker, ErasedVecFamily> = TraitTypeMap::new();
         map.register_type_storage::<Point>();
         assert!(!map.get_storage::<Point>().has_shared_identity());
     }
